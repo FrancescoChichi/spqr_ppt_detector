@@ -19,9 +19,9 @@ int iHighS = 255;
 int iLowV = 88;
 int iHighV = 255;
 
-int threshold_line = 50;
-int min_line_length = 80;
-int max_line_gap = 5;
+int threshold_line = 30;
+int min_line_length = 45;
+int max_line_gap = 3;
 
 
 double orientation;
@@ -151,10 +151,43 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     Point center;
     /// Draw contours 
     Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+    Mat black = Mat::zeros( canny_output.size(), CV_8UC3);
+    Mat new_img = image_mat.clone();
     for( int i = 0; i< contours.size(); i++ )
     {
       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
       drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
+
+
+      drawContours( black, contours, i, color, 2, 8, hierarchy, 0, Point() );
+
+
+      vector<Vec4i> lines;
+      Mat canny_black;
+      //Mat cdst;
+      Canny( black, canny_black, 95, 200, 3 );
+
+      //cvtColor(canny_black, cdst, CV_GRAY2BGR);
+
+      HoughLinesP(canny_black, lines, 1, CV_PI/180, threshold_line, min_line_length, max_line_gap);
+
+      for( size_t i = 0; i < lines.size(); i++ )
+      {
+        Vec4i l = lines[i];
+        line( new_img, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 3, CV_AA);
+      }
+
+
+
+
+
+
+
+
+      //imshow("black", black);
+      //cv::waitKey(0);
+      black = Mat::zeros( canny_output.size(), CV_8UC3);
+
       color = Scalar( 0, 0, 255 );
       approxPolyDP( Mat(contours[i]), contours_poly_[i], 3, true );
       boundRect[i] = boundingRect( Mat(contours_poly_[i]) );
@@ -172,17 +205,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
       //  }
     }
 
-    vector<Vec4i> lines;
-    Mat cdst;
-
-    cvtColor(canny_output, cdst, CV_GRAY2BGR);
-    HoughLinesP(canny_output, lines, 1, CV_PI/180, threshold_line, min_line_length, max_line_gap);
-
-    for( size_t i = 0; i < lines.size(); i++ )
-    {
-      Vec4i l = lines[i];
-      line( cdst, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 3, CV_AA);
-    }
+ 
     
 
     //drawAllTriangles(test,contours);
@@ -201,8 +224,9 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 
         // Showing the result
     //imshow("canny_output ",imgThresholded);
-    //imshow("original", image_mat);
-    imshow("cdst", cdst);
+    imshow("original", image_mat);
+    imshow("detect", new_img);
+    //imshow("cdst", cdst);
     //imshow("grayScale", grayScale);
 
       
