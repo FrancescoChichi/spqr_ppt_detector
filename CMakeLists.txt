@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(spqr_tape_detector)
+project(spqr_ppt)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -104,7 +104,7 @@ find_package(OpenCV REQUIRED)
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
 #  INCLUDE_DIRS include
-#  LIBRARIES spqr_tape_detector
+#  LIBRARIES spqr_ppt
 #  CATKIN_DEPENDS cv_bridge image_transport opencv2 roscpp rospy std_msgs
 #  DEPENDS system_lib
 )
@@ -119,24 +119,24 @@ catkin_package(
 include_directories(include ${catkin_INCLUDE_DIRS})
 
 ## Declare a C++ library
-# add_library(spqr_tape_detector
-#   src/${PROJECT_NAME}/spqr_tape_detector.cpp
+# add_library(spqr_ppt
+#   src/${PROJECT_NAME}/spqr_ppt.cpp
 # )
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(spqr_tape_detector ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(spqr_ppt ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-add_executable(spqr_tape_detector_node src/spqr_tape_detector_node.cpp)
+add_executable(spqr_ppt_node src/spqr_ppt_node.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-add_dependencies(spqr_tape_detector_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+add_dependencies(spqr_ppt_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(spqr_tape_detector_node
+target_link_libraries(spqr_ppt_node
    ${catkin_LIBRARIES}
    ${OpenCV_LIBRARIES}
  )
@@ -156,7 +156,7 @@ target_link_libraries(spqr_tape_detector_node
 # )
 
 ## Mark executables and/or libraries for installation
-# install(TARGETS spqr_tape_detector spqr_tape_detector_node
+# install(TARGETS spqr_ppt spqr_ppt_node
 #   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 #   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
 #   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
@@ -181,7 +181,7 @@ target_link_libraries(spqr_tape_detector_node
 #############
 
 ## Add gtest based cpp test target and link libraries
-# catkin_add_gtest(${PROJECT_NAME}-test test/test_spqr_tape_detector.cpp)
+# catkin_add_gtest(${PROJECT_NAME}-test test/test_spqr_ppt.cpp)
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})
 # endif()
