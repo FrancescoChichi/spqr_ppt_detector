@@ -53,25 +53,69 @@ void getCenter(vector<Point> &pts, Mat &img)
     circle(img, pos, 3, CV_RGB(255, 0, 255), 2);
 }
 
-bool insideCircle(int p, Mat img){
-  int pointsCounter = 0;
-  circle(img, centers[p], distanceTreshold, CV_RGB(255, 0, 255), 2);
+double getOrientation(vector<Point> &pts, Mat &img, string text)
+{
+    //Construct a buffer used by the pca analysis
+    Mat data_pts = Mat(pts.size(), 2, CV_64FC1);
+    for (int i = 0; i < data_pts.rows; ++i)
+    {
+        data_pts.at<double>(i, 0) = pts[i].x;
+        data_pts.at<double>(i, 1) = pts[i].y;
+    }
 
-  for (int i = 0; i < centers.size(); ++i)
-  {
+    //Perform PCA analysis
+    PCA pca_analysis(data_pts, Mat(), CV_PCA_DATA_AS_ROW);
 
-    if(i!=p){
-      if ( sqrt(pow((centers[i].x-centers[p].x),2) + pow((centers[i].y-centers[p].y),2)) <= distanceTreshold  )            //(x - center_x)^2 + (y - center_y)^2 < radius^2.
-        {
-         pointsCounter++;
-        }
+    //Store the position of the object
+    Point pos = Point(pca_analysis.mean.at<double>(0, 0),
+                      pca_analysis.mean.at<double>(0, 1));
 
-      }
+    //Store the eigenvalues and eigenvectors
+    vector<Point2d> eigen_vecs(2);
+    vector<double> eigen_val(2);
+    for (int i = 0; i < 2; ++i)
+    {
+        eigen_vecs[i] = Point2d(pca_analysis.eigenvectors.at<double>(i, 0),
+                                pca_analysis.eigenvectors.at<double>(i, 1));
+
+        eigen_val[i] = pca_analysis.eigenvalues.at<double>(0, i);
+    }
+
+    putText(img, text ,pos , FONT_HERSHEY_SIMPLEX, 1,(255,255,255),2,LINE_AA);    
+
+    // Draw the principal components
+    circle(img, pos, 3, CV_RGB(255, 0, 255), 2);
+    line(img, pos, pos + 0.02 * Point(eigen_vecs[0].x * eigen_val[0], eigen_vecs[0].y * eigen_val[0]) , CV_RGB(255, 255, 0));
+    line(img, pos, pos + 0.02 * Point(eigen_vecs[1].x * eigen_val[1], eigen_vecs[1].y * eigen_val[1]) , CV_RGB(0, 255, 255));
+
+    return atan2(eigen_vecs[0].y, eigen_vecs[0].x);
+}
+
+struct sortX_class {
+    bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.x < pt2.x);}
+} sortX;
+
+struct sortY_class {
+    bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.y < pt2.y);}
+} sortY;
+
+void getShape(std::vector<cv::Point_<int> > edges, vector<Point> &pts, Mat &img){
+  string label = "";
+  if(edges.size()==4){
+
+    std::sort(edges.begin(), edges.end(), sortX);
+    float xDiff = abs(edges[0].x - edges[1].x);
+
+    std::sort(edges.begin(), edges.end(), sortY);
+    float yDiff = abs(edges[0].y - edges[1].y);
+
+    if (xDiff/yDiff >= 0.8f)
+      label = "quad";
+    else
+      label = "rect";
+    getOrientation(pts, img, label);
+
   }
-      if (pointsCounter>pointsInsideTreshold)
-      return true;
-    else 
-      return false;
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
@@ -90,7 +134,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     Mat gray = image_mat.clone();
     cvtColor(image_mat, gray, COLOR_BGR2HSV); //Convert the captu frame from BGR to HSV
 
-    Size size = Size(30,30);
+    Size size = Size(10,10);
     //morphological opening (remove small objects from the foreground)
     erode(gray, gray, getStructuringElement(MORPH_ELLIPSE, size) );
     dilate( gray, gray, getStructuringElement(MORPH_ELLIPSE, size) );
@@ -113,22 +157,9 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     vector<Rect> boundRect( contours.size() );
     vector<vector<Point> > contours_poly_( contours.size() );
 
-    
-    RNG rng;
-
-
-    int best=0;
-    Point center;
-    /// Draw contours 
-    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
-    //Mat new_img = image_mat.clone();
-    Mat new_img = Mat::zeros( canny_output.size(), CV_8UC3 );
-  
     std::vector<cv::Point> approx;  
     for( int i = 0; i< contours.size(); i++ )
     {
-
-
 
       // Approximate contour with accuracy proportional
       // to the contour perimeter
@@ -138,40 +169,20 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
       if (std::fabs(cv::contourArea(contours[i])) < 60 || !cv::isContourConvex(approx))
         continue;
 
-      //Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );      
-      Scalar color = Scalar( 0, 0, 255 );
       if (approx.size() == 4)
-        drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
-
-      /*
-      vector<Vec4i> lines;
-
-      HoughLinesP(canny_output, lines, 1, CV_PI/180, threshold_line, min_line_length, max_line_gap);
-
-      for( size_t i = 0; i < lines.size(); i++ )
       {
-        Vec4i l = lines[i];
-        line( new_img, Point(l[0], l[1]), Point(l[2], l[3]), Scalar(0,0,255), 1, CV_AA);
+        Scalar color = Scalar( 0, 0, 255 );
+        
+        drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
+    
+        getShape(approx, contours[i], image_mat);
+
       }
-
-      approxPolyDP( Mat(contours[i]), contours_poly_[i], 3, true );
-      boundRect[i] = boundingRect( Mat(contours_poly_[i]) );
-      */
-      /*
-      if(boundRect[i].area() > areaTreshold){
-            // Find the orientation of each shape
-            getCenter(contours[i], image_mat);
-            if( insideCircle(i,image_mat) )
-              rectangle( image_mat, boundRect[i].tl(), boundRect[i].br(), color, 2, 8, 0 );
-
-          }*/
           
     }
 
 
     imshow("original", image_mat);
-    //imshow("detect", new_img);
-    //imshow("canny", canny_output);
 
   }
   catch (cv_bridge::Exception& e)
@@ -181,34 +192,11 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
   cv::waitKey(30);
 }
 
-
-
-
-void colorModifier(){
-
-  
-    namedWindow("Control ", CV_WINDOW_AUTOSIZE); //create a window called "Control"
-
-    
-    cvCreateTrackbar("areatreshold", "Control ", &areaTreshold, 10000);
-    cvCreateTrackbar("distance treshold", "Control ", &distanceTreshold, 100000);
-    cvCreateTrackbar("points treshold", "Control ", &pointsInsideTreshold, 20);
-    cvCreateTrackbar("threshold_line", "Control ", &threshold_line, 500);    
-    cvCreateTrackbar("min_line_length", "Control ", &min_line_length, 500);
-    cvCreateTrackbar("max_line_gap", "Control ", &max_line_gap, 500);
-    cvCreateTrackbar("th1", "Control ", &th1, 500);
-    cvCreateTrackbar("th2", "Control ", &th2, 500);
-    cvCreateTrackbar("kernel", "Control ", &kernel, 15);
-
-}
-
-
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "image_listener");
   ros::NodeHandle nh;
 
-  colorModifier(); //decommentare per usare la finestra per modificare i valori
 
   cv::startWindowThread();
   image_transport::ImageTransport it(nh);
