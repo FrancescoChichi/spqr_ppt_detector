@@ -9,7 +9,11 @@ find_package(catkin REQUIRED COMPONENTS
   image_transport
   roscpp
   rospy
+  sensor_msgs
   std_msgs
+  geometry_msgs
+  message_generation
+  
 )
 
 ## System dependencies are found with CMake's conventions
@@ -47,11 +51,11 @@ find_package(OpenCV REQUIRED)
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-# add_message_files(
-#   FILES
-#   Message1.msg
-#   Message2.msg
-# )
+add_message_files(
+  FILES
+  rotated_bounding_box.msg
+  bounding_box_list.msg
+)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -68,10 +72,11 @@ find_package(OpenCV REQUIRED)
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs
-# )
+ generate_messages(
+   DEPENDENCIES
+   geometry_msgs
+   std_msgs
+)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -130,11 +135,9 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 
 ## Declare a C++ executable
 add_executable(spqr_ppt_node src/spqr_ppt_node.cpp)
-
 ## Add cmake target dependencies of the executable
 ## same as for the library above
 add_dependencies(spqr_ppt_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-
 ## Specify libraries to link a library or executable target against
 target_link_libraries(spqr_ppt_node
    ${catkin_LIBRARIES}

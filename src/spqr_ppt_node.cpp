@@ -5,6 +5,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <geometry_msgs/PoseArray.h>
+#include "spqr_find_patches/bounding_box_list.h"
 
 using namespace cv;
 using namespace std;
@@ -17,7 +18,8 @@ int max_line_gap = 3;
 
 
 double orientation;
-ros::Publisher chatter_pub;
+ros::Publisher rbb_pub_;
+spqr_find_patches::bounding_box_list rbb_array;
 std::vector<Point> centers;
 int areaTreshold = 10000;
 int distanceTreshold = 1000000;
@@ -53,8 +55,9 @@ void getCenter(vector<Point> &pts, Mat &img)
     circle(img, pos, 3, CV_RGB(255, 0, 255), 2);
 }
 
-double getOrientation(vector<Point> &pts, Mat &img, string text)
+double getOrientation(vector<Point> &pts,std::vector<cv::Point_<int> > edges, Mat &img, string text)
 {
+  if(text!="quad"){
     //Construct a buffer used by the pca analysis
     Mat data_pts = Mat(pts.size(), 2, CV_64FC1);
     for (int i = 0; i < data_pts.rows; ++i)
@@ -81,7 +84,7 @@ double getOrientation(vector<Point> &pts, Mat &img, string text)
         eigen_val[i] = pca_analysis.eigenvalues.at<double>(0, i);
     }
 
-    putText(img, text ,pos , FONT_HERSHEY_SIMPLEX, 1,(255,255,255),2,LINE_AA);    
+    putText(img, text ,pos , FONT_HERSHEY_SIMPLEX, 1,Scalar(0,0,255),2,LINE_AA);    
 
     // Draw the principal components
     circle(img, pos, 3, CV_RGB(255, 0, 255), 2);
@@ -89,37 +92,40 @@ double getOrientation(vector<Point> &pts, Mat &img, string text)
     line(img, pos, pos + 0.02 * Point(eigen_vecs[1].x * eigen_val[1], eigen_vecs[1].y * eigen_val[1]) , CV_RGB(0, 255, 255));
 
     return atan2(eigen_vecs[0].y, eigen_vecs[0].x);
+  }
+  
+  Point pos = Point((edges[0].x+edges[1].x+edges[2].x+edges[3].x)/4,
+                      (edges[0].y+edges[1].y+edges[2].y+edges[3].y)/4);
+
+  putText(img, text ,pos , FONT_HERSHEY_SIMPLEX, 1,Scalar(0,0,255),2,LINE_AA);    
+
+  // Draw the principal components
+  circle(img, pos, 3, CV_RGB(255, 0, 255), 2);
+  line(img, edges[0], edges[2] , CV_RGB(255, 255, 0));
+  line(img, edges[1], edges[3] , CV_RGB(0, 255, 255));
+
+  return atan2(edges[2].y, edges[2].x) - 0.785398f; //45% = 0.785398f rad
 }
-
-struct sortX_class {
-    bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.x < pt2.x);}
-} sortX;
-
-struct sortY_class {
-    bool operator() (cv::Point pt1, cv::Point pt2) { return (pt1.y < pt2.y);}
-} sortY;
 
 void getShape(std::vector<cv::Point_<int> > edges, vector<Point> &pts, Mat &img){
   string label = "";
   if(edges.size()==4){
 
-    std::sort(edges.begin(), edges.end(), sortX);
     float xDiff = abs(edges[0].x - edges[1].x);
+    float yDiff = abs(edges[0].y - edges[3].y);
 
-    std::sort(edges.begin(), edges.end(), sortY);
-    float yDiff = abs(edges[0].y - edges[1].y);
-
-    if (xDiff/yDiff >= 0.8f)
+    if (xDiff/yDiff >= 0.5f)
       label = "quad";
     else
       label = "rect";
-    getOrientation(pts, img, label);
-
+    getOrientation(pts, edges, img, label);
   }
 }
 
 void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 {
+  rbb_array.boxes.clear();
+
   cv_bridge::CvImagePtr cv_ptr;
   bool found = false;
   try
@@ -156,8 +162,15 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 
     vector<Rect> boundRect( contours.size() );
     vector<vector<Point> > contours_poly_( contours.size() );
+    vector<RotatedRect> minRect( contours.size() );
 
+    rbb_array.header = msg->header;
+    rbb_array.header.stamp=ros::Time::now();
     std::vector<cv::Point> approx;  
+
+    for( int i = 0; i < contours.size(); i++ )
+      minRect[i] = minAreaRect( Mat(contours[i]) );
+
     for( int i = 0; i< contours.size(); i++ )
     {
 
@@ -173,16 +186,29 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
       {
         Scalar color = Scalar( 0, 0, 255 );
         
-        drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
-    
-        getShape(approx, contours[i], image_mat);
+        Point2f rect_points[4]; minRect[i].points( rect_points );
+        for( int j = 0; j < 4; j++ )
+          line( image_mat, rect_points[j], rect_points[(j+1)%4], color, 2, 8 );
+
+        //drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
+        //getShape(approx, contours[i], image_mat);
+
+        spqr_find_patches::rotated_bounding_box rbb_msg;
+
+        rbb_msg.center.x = minRect[i].center.x;
+        rbb_msg.center.y = minRect[i].center.y;
+        rbb_msg.width = minRect[i].size.width;
+        rbb_msg.height = minRect[i].size.height;
+        rbb_msg.angle = minRect[i].angle;
+        rbb_array.boxes.push_back(rbb_msg);
 
       }
           
     }
 
-
     imshow("original", image_mat);
+
+    rbb_pub_.publish(rbb_array);
 
   }
   catch (cv_bridge::Exception& e)
@@ -190,20 +216,21 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     ROS_ERROR("Could not convert from '%s' to 'bgr8'.", msg->encoding.c_str());
   }
   cv::waitKey(30);
+
 }
 
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "image_listener");
-  ros::NodeHandle nh;
+  ros::NodeHandle nh_;
 
 
   cv::startWindowThread();
-  image_transport::ImageTransport it(nh);
+  image_transport::ImageTransport it(nh_);
   //image_transport::Subscriber sub = it.subscribe("/softkinetic_camera/rgb/image_color", 1, imageCallback);
   image_transport::Subscriber sub = it.subscribe("/spqr_camera/rgb", 1, imageCallback);
 
-  chatter_pub = nh.advertise<geometry_msgs::PoseArray>("boxes", 1000);
+  rbb_pub_ = nh_.advertise<spqr_find_patches::bounding_box_list >("/rotated_bounding_boxes", 1);
 
   ros::spin();
 }
