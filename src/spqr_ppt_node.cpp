@@ -11,6 +11,15 @@ using namespace cv;
 using namespace std;
 
 //***********************************
+int iLowH = 0;
+int iHighH = 175;
+
+int iLowS = 0;
+int iHighS = 255;
+
+int iLowV = 0;
+int iHighV = 100;
+
 
 int threshold_line = 30;
 int min_line_length = 45;
@@ -114,10 +123,21 @@ void getShape(std::vector<cv::Point_<int> > edges, vector<Point> &pts, Mat &img)
     float xDiff = abs(edges[0].x - edges[1].x);
     float yDiff = abs(edges[0].y - edges[3].y);
 
-    if (xDiff/yDiff >= 0.5f)
+    float rel;
+
+    if(xDiff<yDiff)
+      rel = yDiff/xDiff;
+    else
+      rel = xDiff/yDiff;
+
+    if (rel <= 1.7f)
       label = "quad";
     else
       label = "rect";
+
+    //cout<<label<<" x "<<xDiff<<" y "<<yDiff<<endl;
+    //cout<<endl<<label<<" "<<rel<<endl<<endl<<endl;
+    
     getOrientation(pts, edges, img, label);
   }
 }
@@ -137,10 +157,22 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     Mat canny_output;
 
     /// Detect edges using canny
-    Mat gray = image_mat.clone();
-    cvtColor(image_mat, gray, COLOR_BGR2HSV); //Convert the captu frame from BGR to HSV
+    //Mat gray = image_mat.clone();
+    //cvtColor(image_mat, gray, COLOR_BGR2HSV); //Convert the captu frame from BGR to HSV
+
+
+    Mat imgHSV;
+
+    cvtColor(image_mat, imgHSV, COLOR_BGR2HSV); //Convert the captu frame from BGR to HSV
+    
+    Mat gray;
+
+    inRange(imgHSV, Scalar(iLowH, iLowS, iLowV), Scalar(iHighH, iHighS, iHighV), gray); //Threshold the image 
+
+
 
     Size size = Size(10,10);
+
     //morphological opening (remove small objects from the foreground)
     erode(gray, gray, getStructuringElement(MORPH_ELLIPSE, size) );
     dilate( gray, gray, getStructuringElement(MORPH_ELLIPSE, size) );
@@ -167,31 +199,32 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     rbb_array.header = msg->header;
     rbb_array.header.stamp=ros::Time::now();
     std::vector<cv::Point> approx;  
-
+    
+    Mat cont = image_mat.clone();
+    Scalar color = Scalar( 0, 0, 255 );
+    
     for( int i = 0; i < contours.size(); i++ )
       minRect[i] = minAreaRect( Mat(contours[i]) );
 
     for( int i = 0; i< contours.size(); i++ )
     {
-
+      drawContours( cont, contours, i, color, 2, 8, hierarchy, 0, Point() );
       // Approximate contour with accuracy proportional
       // to the contour perimeter
       cv::approxPolyDP(cv::Mat(contours[i]), approx, cv::arcLength(cv::Mat(contours[i]), true)*0.02, true);
 
       // Skip small or non-convex objects 
-      if (std::fabs(cv::contourArea(contours[i])) < 60 || !cv::isContourConvex(approx))
+      if (std::fabs(cv::contourArea(contours[i])) < 10000 || !cv::isContourConvex(approx))
         continue;
 
       if (approx.size() == 4)
-      {
-        Scalar color = Scalar( 0, 0, 255 );
-        
+      { 
         Point2f rect_points[4]; minRect[i].points( rect_points );
         for( int j = 0; j < 4; j++ )
           line( image_mat, rect_points[j], rect_points[(j+1)%4], color, 2, 8 );
 
         //drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
-        //getShape(approx, contours[i], image_mat);
+        getShape(approx, contours[i], image_mat);
 
         spqr_find_patches::rotated_bounding_box rbb_msg;
 
@@ -203,7 +236,6 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
         rbb_array.boxes.push_back(rbb_msg);
 
       }
-          
     }
 
     imshow("original", image_mat);
@@ -219,16 +251,34 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
 
 }
 
+void trackbar(){
+
+  
+    namedWindow("Control ", CV_WINDOW_AUTOSIZE); //create a window called "Control"
+
+    cvCreateTrackbar("first threshod", "Control ", &th1, 500);
+    cvCreateTrackbar("second threshod", "Control ", &th2, 500);
+    cvCreateTrackbar("LowH", "Control ", &iLowH, 179); //Hue (0 - 179)
+    cvCreateTrackbar("HighH", "Control ", &iHighH, 179);
+
+    cvCreateTrackbar("LowS", "Control ", &iLowS, 255); //Saturation (0 - 255)
+    cvCreateTrackbar("HighS", "Control ", &iHighS, 255);
+
+    cvCreateTrackbar("LowV", "Control ", &iLowV, 255); //Value (0 - 255)
+    cvCreateTrackbar("HighV", "Control ", &iHighV, 255);
+}
+
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "image_listener");
   ros::NodeHandle nh_;
 
+  //trackbar();
 
   cv::startWindowThread();
   image_transport::ImageTransport it(nh_);
-  //image_transport::Subscriber sub = it.subscribe("/softkinetic_camera/rgb/image_color", 1, imageCallback);
-  image_transport::Subscriber sub = it.subscribe("/spqr_camera/rgb", 1, imageCallback);
+  image_transport::Subscriber sub = it.subscribe("/softkinetic_camera/rgb/image_color", 1, imageCallback);
+  //image_transport::Subscriber sub = it.subscribe("/spqr_camera/rgb", 1, imageCallback);
 
   rbb_pub_ = nh_.advertise<spqr_find_patches::bounding_box_list >("/rotated_bounding_boxes", 1);
 
