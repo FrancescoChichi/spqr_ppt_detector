@@ -79,8 +79,12 @@ double getOrientation(vector<Point> &pts,std::vector<cv::Point_<int> > edges, Ma
     PCA pca_analysis(data_pts, Mat(), CV_PCA_DATA_AS_ROW);
 
     //Store the position of the object
-    Point pos = Point(pca_analysis.mean.at<double>(0, 0),
-                      pca_analysis.mean.at<double>(0, 1));
+    //Point pos = Point(pca_analysis.mean.at<double>(0, 0),
+      //                pca_analysis.mean.at<double>(0, 1));
+
+
+    Point pos = Point((edges[0].x+edges[1].x+edges[2].x+edges[3].x)/4,
+                      (edges[0].y+edges[1].y+edges[2].y+edges[3].y)/4);
 
     //Store the eigenvalues and eigenvectors
     vector<Point2d> eigen_vecs(2);
@@ -116,29 +120,26 @@ double getOrientation(vector<Point> &pts,std::vector<cv::Point_<int> > edges, Ma
   return atan2(edges[2].y, edges[2].x) - 0.785398f; //45% = 0.785398f rad
 }
 
-void getShape(std::vector<cv::Point_<int> > edges, vector<Point> &pts, Mat &img){
+void getShape(std::vector<cv::Point_<int> > corners, vector<Point> &pts, Mat &img){
   string label = "";
-  if(edges.size()==4){
+  if(corners.size()==4){
 
-    float xDiff = abs(edges[0].x - edges[1].x);
-    float yDiff = abs(edges[0].y - edges[3].y);
+    vector<float> edges;
+    for (int i=0;i<4;i++)
+      edges.push_back(distanceBetweenTwoPoints(corners[i],corners[(i+1)%4]));
 
-    float rel;
+    float min = *std::min_element(edges.begin(),edges.end());
+    float max = *std::max_element(edges.begin(),edges.end());
 
-    if(xDiff<yDiff)
-      rel = yDiff/xDiff;
-    else
-      rel = xDiff/yDiff;
-
-    if (rel <= 1.7f)
+    if (max/min <= 1.7f)
       label = "quad";
     else
       label = "rect";
 
-    //cout<<label<<" x "<<xDiff<<" y "<<yDiff<<endl;
-    //cout<<endl<<label<<" "<<rel<<endl<<endl<<endl;
+    //cout<<label<<" min "<<min<<" max "<<max<<endl;
+    //cout<<endl<<" "<<max/min<<endl<<endl<<endl;
     
-    getOrientation(pts, edges, img, label);
+    getOrientation(pts, corners, img, label);
   }
 }
 
@@ -203,19 +204,26 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
     Mat cont = image_mat.clone();
     Scalar color = Scalar( 0, 0, 255 );
     
+
+
     for( int i = 0; i < contours.size(); i++ )
       minRect[i] = minAreaRect( Mat(contours[i]) );
 
     for( int i = 0; i< contours.size(); i++ )
     {
-      drawContours( cont, contours, i, color, 2, 8, hierarchy, 0, Point() );
+      //drawContours( cont, contours, i, color, 2, 8, hierarchy, 0, Point() );
       // Approximate contour with accuracy proportional
       // to the contour perimeter
       cv::approxPolyDP(cv::Mat(contours[i]), approx, cv::arcLength(cv::Mat(contours[i]), true)*0.02, true);
 
+      
       // Skip small or non-convex objects 
       if (std::fabs(cv::contourArea(contours[i])) < 10000 || !cv::isContourConvex(approx))
         continue;
+
+
+      //for(int j=0;j<approx.size();j++)
+        //circle(image_mat, approx[j], 3, Scalar(255,0,0), 5, 8, 0);
 
       if (approx.size() == 4)
       { 
@@ -223,7 +231,7 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
         for( int j = 0; j < 4; j++ )
           line( image_mat, rect_points[j], rect_points[(j+1)%4], color, 2, 8 );
 
-        //drawContours( image_mat, contours, i, color, 2, 8, hierarchy, 0, Point() );
+        drawContours( cont, contours, i, color, 2, 8, hierarchy, 0, Point() );
         getShape(approx, contours[i], image_mat);
 
         spqr_find_patches::rotated_bounding_box rbb_msg;
@@ -236,9 +244,31 @@ void imageCallback(const sensor_msgs::ImageConstPtr& msg)
         rbb_array.boxes.push_back(rbb_msg);
 
       }
+
+      /*else if (approx.size() == 6)
+      { 
+        Point2f rect_points[6]; minRect[i].points( rect_points );
+        for( int j = 0; j < 6; j++ )
+          line( image_mat, rect_points[j], rect_points[(j+1)%6], color, 2, 8 );
+
+        
+        drawContours( image_mat, contours, i, Scalar(0,255,0), 2, 8, hierarchy, 0, Point() );
+        /*getShape(approx, contours[i], image_mat);
+
+        spqr_find_patches::rotated_bounding_box rbb_msg;
+
+        rbb_msg.center.x = minRect[i].center.x;
+        rbb_msg.center.y = minRect[i].center.y;
+        rbb_msg.width = minRect[i].size.width;
+        rbb_msg.height = minRect[i].size.height;
+        rbb_msg.angle = minRect[i].angle;
+        rbb_array.boxes.push_back(rbb_msg);
+
+      }*/
     }
 
     imshow("original", image_mat);
+    //imshow("gray", gray);
 
     rbb_pub_.publish(rbb_array);
 
